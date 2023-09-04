@@ -1,0 +1,25 @@
+{
+  "chain_data": ["Chain Name", "USD Value"],
+  "protocol_data": ["Protocol ID", "Chain Name", "Protocol Name", "USD Value"],
+  "user_protocol_data": ["Your", "Expected", "Columns", "Here"],
+  "all_token_list": [
+    "id",
+    "chain",
+    "name",
+    "symbol",
+    "display_symbol",
+    "optimized_symbol",
+    "decimals",
+    "logo_url",
+    "protocol_id",
+    "price",
+    "price_24h_change",
+    "is_verified",
+    "is_core",
+    "is_wallet",
+    "time_at",
+    "amount",
+    "raw_amount",
+    "raw_amount_hex_str"
+  ]
+}
