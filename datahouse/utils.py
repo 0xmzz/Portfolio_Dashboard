@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from decimal import Decimal
 
 # Load environment variables from .env file
 load_dotenv()
@@ -13,6 +14,8 @@ headers = {
     "accept": "application/json",
     "AccessKey": DEBANK_KEY,
 }
+def to_decimal(value): 
+    return Decimal(str(value))
 
 def check_schema(df, expected_columns, default_value=0):
     missing_columns = set(expected_columns) - set(df.columns)

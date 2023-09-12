@@ -1,7 +1,6 @@
 {
   "chain_data": ["Chain Name", "USD Value"],
-  "protocol_data": ["Protocol ID", "Chain Name", "Protocol Name", "USD Value"],
-  "user_protocol_data": ["Your", "Expected", "Columns", "Here"],
+
   "all_token_list": [
     "id",
     "chain",

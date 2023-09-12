@@ -1,104 +1,235 @@
-import sqlite3
+import psycopg2
 import json
+from api_calls import fetch_total_balance, fetch_all_token_list
 import pandas as pd
+import os
+from utils import to_decimal
+from sqlalchemy import create_engine
+from decouple import config
 
-DB_FILE = 'debank_data.db'
+# Load environment variables from .env file
+DATABASE_URL = config('DATABASE_URL')
+
+
+
+engine = create_engine(DATABASE_URL, echo=True)
+
+
+def ensure_data_directory():
+    if not os.path.exists('data'):
+        os.makedirs('data')
 
 def execute_query(query, params=()):
-    try:
-        conn = sqlite3.connect('your_database_file.db')
+    with psycopg2.connect(DATABASE_URL) as conn:
         cursor = conn.cursor()
         cursor.execute(query, params)
         conn.commit()
-        conn.close()
-    except sqlite3.Error as e:
-        print(f"Database error: {e}")
-
 
 def execute_query_with_result(query, params=()):
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            return cursor.fetchall()
-    except sqlite3.Error as e:
-        raise Exception(f"Database error in execute_query_with_results: {e}")
+    with psycopg2.connect(DATABASE_URL) as conn:
+        cursor = conn.cursor()
+        cursor.execute(query, params)
+        return cursor.fetchall()
 
-# Moved these lines to the top-level indentation
 def initialize_db():
     execute_query('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id TEXT PRIMARY KEY,
-            addresses TEXT
+            user_id VARCHAR PRIMARY KEY,
+            addresses VARCHAR
+        );
+    ''')
+    execute_query('''
+        CREATE TABLE IF NOT EXISTS total_balance_data (
+            user_id VARCHAR,
+            address VARCHAR,
+            timestamp TIMESTAMP,
+            chain_data VARCHAR
+        );
+    ''')
+    execute_query('''
+        CREATE TABLE IF NOT EXISTS all_token_list_data (
+            user_id VARCHAR,
+            address VARCHAR,
+            timestamp TIMESTAMP,
+            id VARCHAR,
+            chain VARCHAR,
+            name VARCHAR,
+            symbol VARCHAR,
+            display_symbol VARCHAR,
+            optimized_symbol VARCHAR,
+            decimals INTEGER,
+            logo_url VARCHAR,
+            protocol_id VARCHAR,
+            price REAL,
+            price_24h_change REAL,
+            is_verified BOOLEAN,
+            is_core BOOLEAN,
+            is_wallet BOOLEAN,
+            time_at REAL,
+            amount REAL,
+            raw_amount REAL,
+            raw_amount_hex_str VARCHAR
         );
     ''')
 
-    execute_query('''
-    CREATE TABLE IF NOT EXISTS total_balance_data (
-        user_id TEXT,
-        address TEXT,
-        timestamp DATETIME,
-        chain_data TEXT
-    );
-    ''')
+def fetch_user_ids():
+    return [row[0] for row in execute_query_with_result("SELECT user_id FROM users")]
 
-    execute_query('''
-    CREATE TABLE IF NOT EXISTS all_token_list_data (
-        user_id TEXT,
-        address TEXT,
-        timestamp DATETIME,
-        token_data TEXT
-    );
-    ''')
+def create_user_id(user_id, addresses):
+    addresses_json = json.dumps(addresses)
+    execute_query('INSERT INTO users (user_id, addresses) VALUES (?, ?)', (user_id, addresses_json))
 
 def save_addresses_to_id(user_id, addresses):
     execute_query('INSERT OR REPLACE INTO users (user_id, addresses) VALUES (?, ?)', (user_id, json.dumps(addresses)))
+
+def delete_user_id(user_id):
+    execute_query('DELETE FROM users WHERE user_id = ?', (user_id,))
+
+def add_address_to_user(user_id, address):
+    existing_addresses = load_addresses_from_id(user_id)
+    existing_addresses.append(address)
+    save_addresses_to_id(user_id, existing_addresses)
+
+def remove_address_from_user(user_id, address):
+    existing_addresses = load_addresses_from_id(user_id)
+    if address in existing_addresses:
+        existing_addresses.remove(address)
+    save_addresses_to_id(user_id, existing_addresses)
+
+def add_address_for_user(user_id, new_address):
+    try:
+        current_addresses = fetch_addresses_for_user(user_id)
+        if new_address in current_addresses:
+            print(f"Address {new_address} already exists for user {user_id}.")
+            return
+        current_addresses.append(new_address)
+        save_addresses_to_id(user_id, current_addresses)
+        print(f"Address {new_address} added for user {user_id}.")
+    except Exception as e:
+        print(f"Error in add_address_for_user: {e}")
+
+def delete_address_for_user(user_id, address):
+    addresses = fetch_addresses_for_user(user_id)
+    if address in addresses:
+        addresses.remove(address)
+        save_addresses_to_id(user_id, addresses)
 
 def load_addresses_from_id(user_id):
     result = execute_query_with_result('SELECT addresses FROM users WHERE user_id = ?', (user_id,))
     return json.loads(result[0][0]) if result else []
 
-def store_total_balance_data(user_id, address, chain_data_df):
-    with sqlite3.connect(DB_FILE) as conn:
-        chain_data_df.to_sql('total_balance_data', conn, if_exists='replace', index=False)
-        # Add code to associate this data with user_id and address
-
-def store_all_token_list_data(user_id, address, token_data_df):
-    try:
-        print("Before conversion:", token_data_df.dtypes)
-        
-        for col in token_data_df.columns:
-            token_data_df[col] = token_data_df[col].astype(str)
-        
-        print("After conversion:", token_data_df.dtypes)
-        
-        with sqlite3.connect(DB_FILE) as conn:
-            token_data_df['user_id'] = user_id
-            token_data_df['address'] = address
-            token_data_df.to_sql('all_token_list_data', conn, if_exists='append', index=False)
-            conn.commit()
-            
-        print("Data stored successfully.")
-        
-    except Exception as e:
-        print(f"An error occurred: {e}")
-
-
+def fetch_addresses_for_user(user_id):
+    result = execute_query_with_result('SELECT addresses FROM users WHERE user_id = ?', (user_id,))
+    return json.loads(result[0][0]) if result else []
 
 def load_all_user_ids():
     return [row[0] for row in execute_query_with_result("SELECT user_id FROM users")]
 
-def load_saved_data(user_id, address):
-    saved_balance_data = execute_query_with_result('SELECT chain_data FROM total_balance_data WHERE user_id = ? AND address = ?', (user_id, address))
-    saved_token_data = execute_query_with_result('SELECT token_data FROM all_token_list_data WHERE user_id = ? AND address = ?', (user_id, address))
+def update_all_databases():
+    user_ids = load_all_user_ids()
+    for user_id in user_ids:
+        addresses = load_addresses_from_id(user_id)
+        for address in addresses:
+            # Here, you can call the function to update the database for each address.
+            # For example: update_database_for_testing(address)
+            pass
 
-    # Convert JSON string to DataFrame
-    saved_balance_data = pd.read_json(saved_balance_data[0][0]) if saved_balance_data is not None else None
-    saved_token_data = pd.read_json(saved_token_data[0][0]) if saved_token_data is not None else None
+def load_data_from_file(filename):
+    try:
+        with open(filename, 'r') as f:
+            data = json.load(f)
+        return data
+    except Exception as e:
+        print(f"Error reading/parsing JSON: {e}")
+        return None
 
-    return saved_balance_data, saved_token_data
+
+
+    except FileNotFoundError:
+        print(f"File {filename} not found in {os.getcwd()}")
+        return None
+    except json.JSONDecodeError:
+        print(f"Error decoding JSON from file {filename}")
+        return None
+
+def save_raw_data_for_user_to_file(user_id):
+    ensure_data_directory()
+    addresses = fetch_addresses_for_user(user_id)
+    
+    all_data = {}
+    for address in addresses:
+        raw_balance_data = fetch_total_balance(address)
+        raw_token_data = fetch_all_token_list(address)
+        
+        combined_data = {
+            "raw_balance_data": raw_balance_data,
+            "raw_token_data": raw_token_data
+        }
+        all_data[address] = combined_data
+    
+    filename = f"data/raw_api_data_{user_id}.json"
+    with open(filename, "w") as f:
+        json.dump(all_data, f)
+
+def store_total_balance_data(user_id, address, raw_balance_data):
+    # If raw_balance_data is not already in DataFrame format, convert it to one.
+    if not isinstance(raw_balance_data, pd.DataFrame):
+        raw_balance_data_df = pd.DataFrame([raw_balance_data])  # or any other appropriate conversion
+    else:
+        raw_balance_data_df = raw_balance_data
+    
+    raw_balance_data_df['user_id'] = user_id
+    raw_balance_data_df['address'] = address
+    with engine.connect() as conn:  # Use the SQLAlchemy engine to create a connection
+        raw_balance_data_df.to_sql('total_balance_data', conn, if_exists='replace', index=False)
+
+def store_all_token_list_data(user_id, address, token_data_df):
+    token_data_df['raw_amount'] = token_data_df['raw_amount'].apply(to_decimal)
+
+    try:
+        for col in ['raw_amount']:
+            token_data_df[col] = token_data_df[col].astype(str)
+
+        token_data_df['user_id'] = user_id
+        token_data_df['address'] = address
+        with psycopg2.connect(DATABASE_URL) as conn:
+            token_data_df.to_sql('all_token_list_data', conn, if_exists='append', index=False)
+            conn.commit()
+    except Exception as e:
+        print(f"Error in store_all_token_list_data: {e}")
+
+def save_raw_data_for_user_to_db(user_id):
+    addresses = fetch_addresses_for_user(user_id)
+    
+    for address in addresses:
+        raw_balance_data = fetch_total_balance(address)
+        raw_token_data = fetch_all_token_list(address)
+        
+        # Now, store these raw data into your PostgreSQL database
+        store_total_balance_data(user_id, address, raw_balance_data)
+        store_all_token_list_data(user_id, address, raw_token_data)
+
+def load_data_from_file_and_save_to_db(user_id):
+    filename = f"data/raw_api_data_{user_id}.json"
+    with open(filename, "r") as f:
+        all_data = json.load(f)
+        
+    for address, combined_data in all_data.items():
+        raw_balance_data = combined_data["raw_balance_data"]
+        raw_token_data = combined_data["raw_token_data"]
+        
+        # Now, store these raw data into your PostgreSQL database
+        store_total_balance_data(user_id, address, raw_balance_data)
+        store_all_token_list_data(user_id, address, raw_token_data)
+
+def cleanup_json_file(user_id):
+    filename = f"data/raw_api_data_{user_id}.json"
+    try:
+        os.remove(filename)
+        print(f"Successfully deleted {filename}.")
+    except Exception as e:
+        print(f"Error deleting file {filename}: {e}")
 
 
 if __name__ == "__main__":
-    # No need to call initialize_db() as the tables are created at the top level
-    pass
+    initialize_db()

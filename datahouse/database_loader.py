@@ -1,124 +1,92 @@
 import streamlit as st
-from api_calls import fetch_total_balance, fetch_all_token_list
-from data_processing import process_all_token_list, process_balance_data
-from utils import check_schema
-from database import save_addresses_to_id, load_addresses_from_id, load_all_user_ids, store_total_balance_data, store_all_token_list_data, load_saved_data, initialize_db
+
+from utils import to_decimal
+from database import (initialize_db, load_all_user_ids, load_addresses_from_id,save_raw_data_for_user_to_file, save_raw_data_for_user_to_db, load_data_from_file_and_save_to_db, cleanup_json_file, fetch_total_balance, fetch_all_token_list, 
+                      save_addresses_to_id, store_total_balance_data, 
+                      store_all_token_list_data, drop_all_token_list_data_table, delete_address_for_user, 
+                      create_user_id, delete_user_id, add_address_for_user, fetch_addresses_for_user, update_all_databases, load_data_from_file, fetch_user_ids)
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
 import json
 import datetime
-import sqlite3
+import pandas as pd
+import os
+from utils import to_decimal
+from decimal import Decimal
+from dotenv import load_dotenv
+from user_id_management import handle_user_id_management
+from data_loading import handle_data_loading
+from db_management import handle_db_management
 
-DB_FILE = 'debank_data.db'
+# rest of the main.py code...
 
 
+# Load .env variables
+load_dotenv()
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# SQLAlchemy setup
+engine = create_engine(DATABASE_URL, echo=False)
+Session = sessionmaker(bind=engine)
+
+current_dir = os.path.dirname(__file__)
+config_path = os.path.join(current_dir, 'config', 'schema_config.json')
+
+
+current_dir = os.path.dirname(__file__)
+config_path = os.path.join(current_dir, 'config', 'schema_config.json')
 
 # Load the expected schema from the config file
-with open('config/schema_config.json', 'r') as f:
+with open(config_path, 'r') as f:
     expected_schema = json.load(f)
 
 def store_all_token_list_data(user_id, address, token_data_df):
+    session = Session()
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            token_data_df.to_sql('all_token_list_data', conn, if_exists='replace', index=False)
-            # Add code to associate this data with user_id and address
+        token_data_df.to_sql('all_token_list_data', engine, if_exists='replace', index=False)
+        session.commit()
     except Exception as e:
+        session.rollback()
         print(f"Error in store_all_token_list_data: {e}")
-# Function to update a single address (for testing)
-def update_database_for_testing(address):
-    st.write(f"Updating database for address {address}...")
-    try:
-        # Fetch and process chain data (total_balance)
-        raw_balance_data = fetch_total_balance(address)
-        st.write("### Raw Chain Data (Total Balance)")
-        
-
-        processed_balance_data = process_balance_data(raw_balance_data)  # Process the data
-
-        # Check the schema for balance data
-        st.write("### Processed Chain Data")
-        if processed_balance_data is not None and not processed_balance_data.empty:
-            st.write(processed_balance_data)
-            if not check_schema(processed_balance_data, expected_schema['chain_data']):
-                st.error("Schema mismatch for chain data!")
-            st.write("### Processed Chain Data")
-            st.write(processed_balance_data)
-
-        # Fetch and process token data (all_token_list)
-        raw_token_data = fetch_all_token_list(address)
-        st.write("### Raw Token Data")
-        # st.write(raw_token_data[:5])  # Display only the head of the data
-
-        processed_token_data = process_all_token_list(raw_token_data, expected_schema)  # Process the data
-
-        # Check Data Types
-        # st.write("Data Types:", processed_token_data.dtypes)
-
-        # Check the schema for token data
-        if processed_token_data is not None and not processed_token_data.empty:
-            if not check_schema(processed_token_data, expected_schema['all_token_list']):
-                st.error("Schema mismatch for token data!")
-            st.write("### Processed Token Data")
-            # st.write(processed_token_data.head())  # Display only the head of the data
-
-            # Save data to database
-            user_id = "some_user_id"  # Replace with actual user ID
-            save_addresses_to_id(user_id, address)
-            
-            # Use the new storage methods here
-            store_total_balance_data(user_id, address, processed_balance_data)
-            store_all_token_list_data(user_id, address, processed_token_data)
-
-            st.success(f"Database updated for address {address}")
-
-    except Exception as e:
-        st.error(f"An error occurred here: {e}")
-
-# Function to update all addresses in the database
-def update_all_databases():
-    try:
-        user_ids = load_all_user_ids()
-        for user_id in user_ids:
-            addresses = load_addresses_from_id(user_id)
-            for address in addresses:
-                update_database_for_testing(address)
-        st.success("All databases updated.")
-    except Exception as e:
-        st.error(f"An error occurred: {e}")
+    finally:
+        session.close()
 
 # Streamlit UI
 def main():
     st.title('Database Loader')
-# Add a button to initialize the database
+        # Add a button to initialize the database
     if st.sidebar.button('Initialize Database'):
-        initialize_db()
-        with open('last_init_time.txt', 'w') as f:
-            f.write(str(datetime.datetime.now()))
-        st.sidebar.success('Database initialized.')
+            initialize_db()
+            with open('last_init_time.txt', 'w') as f:
+                f.write(str(datetime.datetime.now()))
+            st.sidebar.success('Database initialized.')
 
-    # Display the last time the database was initialized
+        # Display the last time the database was initialized
     try:
-        with open('last_init_time.txt', 'r') as f:
-            last_init_time = f.read()
-        st.sidebar.write(f"Last initialized: {last_init_time}")
+            with open('last_init_time.txt', 'r') as f:
+                last_init_time = f.read()
+            st.sidebar.write(f"Last initialized: {last_init_time}")
     except FileNotFoundError:
-        st.sidebar.write("Database not initialized yet.")
-    # Streamlit text input to get Ethereum address
-    address = st.text_input("Enter Ethereum Address:", value="0x353d566af2b571f6ade5cc9f7a91422f6f738098", type="default")
+            st.sidebar.write("Database not initialized yet.")
 
-    # Streamlit button to trigger update for a single address (for testing)
-    if st.button('Update Database for Entered Address'):
-        if address:
-            update_database_for_testing(address)
-        else:
-            st.warning("Please enter an Ethereum address.")
+    # Create a tab-like interface using st.radio
+    tab_selection = st.radio("Choose a tab:", ["User ID Management", "API Data Loading and Fetching from file", "Database Management"])
+        
+    if tab_selection == "User ID Management":
+        handle_user_id_management()
+       
 
-    # Streamlit button to trigger update for all addresses
-    if st.button('Update all Addresses in Database'):
-        update_all_databases()
+    if tab_selection == "API Data Loading and Fetching from file":
+       handle_data_loading()
+        
+
+    if tab_selection == "Database Management":
+        handle_database_management()
 
 if __name__ == '__main__':
     main()
 
-    st.title('Database Loader')
+
 
     
