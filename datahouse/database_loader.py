@@ -1,10 +1,6 @@
 import streamlit as st
 
 from utils import to_decimal
-from database import (initialize_db, load_all_user_ids, load_addresses_from_id,save_raw_data_for_user_to_file, save_raw_data_for_user_to_db, load_data_from_file_and_save_to_db, cleanup_json_file, fetch_total_balance, fetch_all_token_list, 
-                      save_addresses_to_id, store_total_balance_data, 
-                      store_all_token_list_data, drop_all_token_list_data_table, delete_address_for_user, 
-                      create_user_id, delete_user_id, add_address_for_user, fetch_addresses_for_user, update_all_databases, load_data_from_file, fetch_user_ids)
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 import json
@@ -17,9 +13,7 @@ from dotenv import load_dotenv
 from user_id_management import handle_user_id_management
 from data_loading import handle_data_loading
 from db_management import handle_db_management
-
-# rest of the main.py code...
-
+from database import initialize_db
 
 # Load .env variables
 load_dotenv()
@@ -56,7 +50,7 @@ def store_all_token_list_data(user_id, address, token_data_df):
 def main():
     st.title('Database Loader')
         # Add a button to initialize the database
-    if st.sidebar.button('Initialize Database'):
+    if st.sidebar.button('Initialize Tables in Database'):
             initialize_db()
             with open('last_init_time.txt', 'w') as f:
                 f.write(str(datetime.datetime.now()))
@@ -82,7 +76,7 @@ def main():
         
 
     if tab_selection == "Database Management":
-        handle_database_management()
+        handle_db_management()
 
 if __name__ == '__main__':
     main()

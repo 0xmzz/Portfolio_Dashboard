@@ -17,3 +17,24 @@ __pycache__/
 *.swp
 *.swo
 *.swn
+
+# SQLite database files
+*.db
+
+# Timestamp and other transient files
+last_init_time.txt
+last_save_time.txt
+
+# Compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+
+# Miscellaneous or IDE specific
+*.log
+*.swp
+*.swo
+*.bak
+*.DS_Store
+.vscode/
+.idea/

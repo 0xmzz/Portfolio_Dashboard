@@ -8,7 +8,8 @@ from sqlalchemy import create_engine
 from decouple import config
 
 # Load environment variables from .env file
-DATABASE_URL = config('DATABASE_URL')
+DATABASE_URL = config('DATABASE_URL').replace("postgresql+psycopg2://", "postgresql://")
+
 
 
 
@@ -77,13 +78,19 @@ def fetch_user_ids():
 
 def create_user_id(user_id, addresses):
     addresses_json = json.dumps(addresses)
-    execute_query('INSERT INTO users (user_id, addresses) VALUES (?, ?)', (user_id, addresses_json))
+    execute_query('INSERT INTO users (user_id, addresses) VALUES (%s, %s)', (user_id, addresses_json))
 
 def save_addresses_to_id(user_id, addresses):
-    execute_query('INSERT OR REPLACE INTO users (user_id, addresses) VALUES (?, ?)', (user_id, json.dumps(addresses)))
+    execute_query('''
+INSERT INTO users (user_id, addresses) 
+VALUES (%s, %s) 
+ON CONFLICT (user_id) 
+DO UPDATE SET addresses = EXCLUDED.addresses;
+''', (user_id, json.dumps(addresses)))
+
 
 def delete_user_id(user_id):
-    execute_query('DELETE FROM users WHERE user_id = ?', (user_id,))
+    execute_query('DELETE FROM users WHERE user_id = %s', (user_id,))
 
 def add_address_to_user(user_id, address):
     existing_addresses = load_addresses_from_id(user_id)
@@ -115,11 +122,11 @@ def delete_address_for_user(user_id, address):
         save_addresses_to_id(user_id, addresses)
 
 def load_addresses_from_id(user_id):
-    result = execute_query_with_result('SELECT addresses FROM users WHERE user_id = ?', (user_id,))
+    result = execute_query_with_result('SELECT addresses FROM users WHERE user_id = %s', (user_id,))
     return json.loads(result[0][0]) if result else []
 
 def fetch_addresses_for_user(user_id):
-    result = execute_query_with_result('SELECT addresses FROM users WHERE user_id = ?', (user_id,))
+    result = execute_query_with_result('SELECT addresses FROM users WHERE user_id = %s', (user_id,))
     return json.loads(result[0][0]) if result else []
 
 def load_all_user_ids():
